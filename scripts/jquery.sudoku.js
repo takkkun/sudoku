@@ -129,7 +129,7 @@
 
           if (allocated == 81) {
             $(window).unbind('keydown', arguments.callee);
-            alert('Conguratulation');
+            alert('Congratulation');
           }
         }
       });
