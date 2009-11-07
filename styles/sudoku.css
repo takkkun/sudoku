@@ -16,7 +16,7 @@ div.sudoku-cell {
   cursor: pointer;
 }
 
-div.sudoku-initial {
+div.sudoku-frozen {
   background: #c0c0c0;
 }
 

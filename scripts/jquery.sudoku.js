@@ -1,162 +1,163 @@
 (function($) {
-  var horizontalGroups = [];
-  var verticalGroups = [];
-  var blockGroups = [];
-
-  var cells = [];
-  var allocated = 0;
   var active = null;
   var bound = false;
 
-  var applyCells = function(cell, iterator) {
-    var offset = cell.data('sudoku.offset');
-    var h = offset[1];
-    var v = offset[0];
-    var b = Math.floor(h / 3) * 3 + Math.floor(v / 3);
+  var initialize = function(initial) {
+    var board = $('<div/>').addClass('sudoku-board');
+    var deployed = 0;
 
-    $.each(horizontalGroups[h], iterator);
-    $.each(verticalGroups[v], iterator);
-    $.each(blockGroups[b], iterator);
+    var rows = xmap(function(row, column) {
+      var value = parseInt(initial.charAt(row * 9 + column), 10);
+      var cell = create(row, column, value);
+      if (cell.data('sudoku').deployed) deployed++;
+      return [row, column, cell.appendTo(board)];
+    });
+
+    var columns = xmap(function(row, column) {
+      return [column, row, rows[row][column]];
+    });
+
+    var blocks = xmap(function(row, column) {
+      var i = Math.floor(row / 3) * 3 + Math.floor(column / 3);
+      var j = (row % 3) * 3 + column % 3;
+      return [i, j, rows[row][column]];
+    });
+
+    var apply = function(cell, iterator) {
+      var data = cell.data('sudoku');
+      var row = data.row;
+      var column = data.column;
+      var block = Math.floor(row / 3) * 3 + Math.floor(column / 3);
+
+      $.each(rows[row], iterator);
+      $.each(columns[column], iterator);
+      $.each(blocks[block], iterator);
+    };
+
+    return board.data('sudoku', {
+      rows:     rows,
+      columns:  columns,
+      blocks:   blocks,
+      deployed: deployed,
+      apply:    apply
+    });
   };
 
-  var initializeBoard = function(initial) {
-    for (var i = 0, l = initial.length; i < l; i++) {
-      var x = i % 9;
-      var y = Math.floor(i / 9);
-      var cell = cells[y][x];
-      var value = parseInt(initial.charAt(i), 10);
+  var create = function(row, column, value) {
+    var cell = $('<div/>').addClass('sudoku-cell').css({
+      left: column * 46 + 2,
+      top:  row    * 46 + 2
+    });
 
-      if (value > 0) {
-        allocated++;
-        cell.addClass('sudoku-initial').
-             text(value).
-             data('sudoku.value', value);
-      }
-      else {
-        cell.click(function() {
-          if (active) {
-            applyCells(active, function() {
-              this.removeClass('sudoku-group');
-            });
-
-            active.removeClass('sudoku-active');
-
-            if (active.hasClass('sudoku-invalid')) {
-              active.removeClass('sudoku-invalid').
-                     text('').
-                     data('sudoku.value', 0);
-            }
-          }
-          active = $(this).addClass('sudoku-active');
-
-          applyCells(active, function() {
-            this.addClass('sudoku-group')
-          });
-        }).data('sudoku.value', 0);
-      }
+    if (value > 0) {
+      cell.addClass('sudoku-frozen').text(value);
     }
+    else {
+      cell.click(function() {
+        if (active) deactivate(active);
+        active = $(this).addClass('sudoku-active');
+        apply(active, function() { this.addClass('sudoku-group') });
+      });
+    }
+
+    return cell.data('sudoku', {
+      row:      row,
+      column:   column,
+      value:    value,
+      frozen:   value > 0,
+      deployed: value > 0
+    });
   };
 
-  var initializeHorizontalGroups = function(cells) {
-    horizontalGroups = cells;
+  var complete = function(board) {
+    var rows = board.data('sudoku').rows;
+    xmap(function(row, column) { rows[row][column].unbind('click') });
+    if (active) deactivate(active);
+    active = null;
+    alert('Congratulation');
   };
 
-  var initializeVerticalGroups = function(cells) {
-    for (var x = 0; x < 9; x++) {
-      var groups = [];
-
-      for (var y = 0; y < 9; y++) {
-        groups.push(cells[y][x]);
-      }
-
-      verticalGroups.push(groups);
-    }
+  var deactivate = function(cell) {
+    cell.removeClass('sudoku-active');
+    apply(cell, function() { this.removeClass('sudoku-group') });
+    if (!cell.data('sudoku').deployed) clear(cell);
   };
 
-  var initializeBlockGroups = function(cells) {
-    for (var i = 0; i < 9; i++) {
-      blockGroups.push([]);
-    }
+  var clear = function(cell) {
+    var data = cell.data('sudoku');
+    data.value = 0;
+    data.deployed = false;
+    return cell.removeClass('sudoku-invalid').text('');
+  };
 
-    for (var y = 0; y < 9; y++) {
-      for (var x = 0; x < 9; x++) {
-        var n = Math.floor(y / 3) * 3 + Math.floor(x / 3);
-        blockGroups[n].push(cells[y][x]);
+  var apply = function(cell, iterator) {
+    cell.parent('div.sudoku-board').data('sudoku').apply(cell, iterator);
+  };
+
+  var xmap = function(iterator) {
+    var items = [];
+
+    for (var row = 0; row < 9; row++) {
+      for (var column = 0; column < 9; column++) {
+        result = iterator(row, column);
+        if (!result) continue;
+        var i = result[0];
+        var j = result[1];
+        if (!items[i]) items[i] = [];
+        items[i][j] = result[2];
       }
     }
+
+    return items;
   };
 
   $.fn.sudoku = function(initial) {
     if (!bound) {
       $(window).keydown(function(event) {
-        if (active) {
-          var beforeAllocated = active.data('sudoku.allocated');
-          var value = event.keyCode - 48;
-          allocatabled = true;
+        if (!active) return;
 
-          if (1 <= value && value <= 9) {
-            applyCells(active, function() {
-              if (allocatabled && value == this.data('sudoku.value')) {
-                return allocatabled = false;
-              }
-            });
+        var data = active.data('sudoku');
+        if (data.frozen) return;
 
-            if (allocatabled) {
-              active.removeClass('sudoku-invalid').
-                     data('sudoku.allocated', true);
-            }
-            else {
-              active.addClass('sudoku-invalid').
-                     data('sudoku.allocated', false);
-            }
+        var value = event.keyCode - 48;
+        if (value < 0 || 9 < value) return;
 
-            active.text(value).data('sudoku.value', value);
-          }
-          else if (value == 0) {
-            active.text('').
-                   data('sudoku.value', 0).
-                   data('sudoku.allocated', false);;
-          }
+        var before = data.deployed;
 
-          var afterAllocated = active.data('sudoku.allocated');
-
-          if (!beforeAllocated && afterAllocated) {
-            allocated++;
-          }
-          else if (beforeAllocated && !afterAllocated) {
-            allocated--;
-          }
-
-          if (allocated == 81) {
-            $(window).unbind('keydown', arguments.callee);
-            alert('Congratulation');
-          }
+        if (value == 0) {
+          clear(active);
         }
+        else {
+          var deployed = true;
+
+          apply(active, function() {
+            if (deployed && value == this.data('sudoku').value) {
+              return deployed = false;
+            }
+          });
+
+          data.value = value;
+          data.deployed = deployed;
+
+          active[deployed ? 'removeClass' : 'addClass']('sudoku-invalid').
+                text(value);
+        }
+
+        var after = data.deployed;
+        var board = active.parent('div.sudoku-board');
+        var boardData = board.data('sudoku');
+
+        if      (!before &&  after) boardData.deployed++;
+        else if ( before && !after) boardData.deployed--;
+
+        if (boardData.deployed == 81) complete(board);
       });
 
       bound = true;
     }
 
-    var board = $('<div/>').addClass('sudoku-board').appendTo(this);
-
-    for (var y = 0; y < 9; y++) {
-      cells.push([]);
-
-      for (var x = 0; x < 9; x++) {
-        var cell = $('<div/>').addClass('sudoku-cell').css({
-          left: x * 46 + 2 + 'px',
-          top:  y * 46 + 2 + 'px'
-        }).appendTo(board).data('sudoku.offset', [x, y]);
-
-        cells[y].push(cell);
-      }
-    }
-
-    initializeBoard(initial);
-    initializeHorizontalGroups(cells);
-    initializeVerticalGroups(cells);
-    initializeBlockGroups(cells);
-
+    var board = initialize(initial).appendTo(this);
+    if (board.data('sudoku').deployed == 81) complete(board);
     return this;
   };
 })(jQuery);
